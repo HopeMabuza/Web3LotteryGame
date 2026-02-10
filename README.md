@@ -44,9 +44,47 @@ The total prize pool is distributed as follows:
 
 ### Players
 
-* Buy lottery tickets by submitting 7 numbers
-* Pay an entry fee in Ether
-* Can participate in multiple rounds
+Players are participants in the lottery game.
+
+* Buy a lottery ticket by submitting **exactly 7 numbers**
+* Pay a fixed entry fee in Ether
+* Wait for the current lottery round to end
+
+**Outcomes:**
+* If a player’s selected numbers match the winning sequence in the correct order, they receive a portion of the prize pool
+* If a player does not win, their contribution remains in the pool and may roll over into the next round
+
+---
+
+### Contract Owner
+
+The contract owner acts as the **lottery operator** and does not participate as a player.
+
+* Deploys the smart contract
+* Starts and ends lottery rounds
+* Triggers the request for random numbers
+* Receives a predefined share of the prize pool as an operational fee
+
+**Restrictions:**
+* The owner cannot buy lottery tickets
+* The owner cannot choose or influence winning numbers
+* The owner cannot manually distribute rewards
+
+---
+
+### Smart Contract
+
+The smart contract is the **central authority** that enforces all lottery rules automatically and without trust in any individual party.
+
+* Validates all player inputs and ticket payments
+* Manages lottery rounds and on-chain state
+* Securely holds all Ether paid for tickets
+* Generates verifiable random winning numbers
+* Compares player tickets against the winning sequence
+* Calculates rewards based on predefined percentages
+* Automatically distributes winnings and the owner’s fee
+* Rolls over any unclaimed funds into the next lottery round
+
 
 ### Contract Owner
 
