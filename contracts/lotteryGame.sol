@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
-import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
+import "@chainlink/contracts/src/v0.8/vrf/VRFConsumerBaseV2.sol";
+import "@chainlink/contracts/src/v0.8/vrf/interfaces/VRFCoordinatorV2Interface.sol";
+
 
 contract lotteryGame is VRFConsumerBaseV2 {
 
-    // ========== STATE ==========
     address public owner;
     uint public constant ENTRY_FEE = 2 gwei;
     uint public rolloverPool;
@@ -21,7 +21,7 @@ contract lotteryGame is VRFConsumerBaseV2 {
 
     Ticket[] public tickets;
 
-    // Prize percentages
+    
     uint constant TWO_MATCH = 5;
     uint constant THREE_MATCH = 10;
     uint constant FOUR_MATCH = 15;
@@ -31,7 +31,7 @@ contract lotteryGame is VRFConsumerBaseV2 {
 
     uint constant OWNER_FEE_PERCENT = 10;
 
-    // Chainlink VRF Variables
+   
     VRFCoordinatorV2Interface COORDINATOR;
     uint64 s_subscriptionId;
     bytes32 keyHash;
@@ -40,12 +40,10 @@ contract lotteryGame is VRFConsumerBaseV2 {
     uint32 numWords = 7;
     uint256 public s_requestId;
 
-    // ========== EVENTS ==========
     event TicketPurchased(address indexed player);
     event WinnerNumbersGenerated(uint8[7] winningNumbers);
     event RewardsDistributed();
 
-    // ========== CONSTRUCTOR ==========
     constructor(
         address vrfCoordinator,
         bytes32 _keyHash,
@@ -65,7 +63,7 @@ contract lotteryGame is VRFConsumerBaseV2 {
         _;
     }
 
-    // ========== BUY TICKET ==========
+    // buy ticktet
     function buyTicket(uint8[7] memory _numbers) public payable {
         require(lotteryOpen, "Lottery closed");
         require(msg.value == ENTRY_FEE, "Incorrect entry fee");
@@ -78,7 +76,7 @@ contract lotteryGame is VRFConsumerBaseV2 {
         emit TicketPurchased(msg.sender);
     }
 
-    // ========== REQUEST RANDOM NUMBERS ==========
+    // get random words from chainlink vrf
     function requestWinningNumbers() public onlyOwner {
         require(lotteryOpen, "Lottery closed");
         s_requestId = COORDINATOR.requestRandomWords(
@@ -90,9 +88,9 @@ contract lotteryGame is VRFConsumerBaseV2 {
         );
     }
 
-    // ========== CHAINLINK VRF CALLBACK ==========
+    // chainlink vrf callback function to receive random words and generate winning numbers
     function fulfillRandomWords(
-        uint256, /* requestId */
+        uint256, // requestId 
         uint256[] memory randomWords
     ) internal override {
         for (uint i = 0; i < 7; i++) {
@@ -102,7 +100,7 @@ contract lotteryGame is VRFConsumerBaseV2 {
         distributeRewards();
     }
 
-    // ========== DISTRIBUTE REWARDS ==========
+    // distribute rewards to winners based on matching numbers
     function distributeRewards() internal {
         uint totalPool = address(this).balance;
         uint ownerFee = (totalPool * OWNER_FEE_PERCENT) / 100;
@@ -137,7 +135,7 @@ contract lotteryGame is VRFConsumerBaseV2 {
         emit RewardsDistributed();
     }
 
-    // ========== INTERNAL HELPERS ==========
+    // helper functions
     function countMatches(uint8[7] memory playerNumbers) internal view returns (uint) {
         uint matches = 0;
         for (uint i = 0; i < 7; i++) {
