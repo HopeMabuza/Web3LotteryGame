@@ -1,162 +1,135 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@chainlink/contracts/src/v0.8/vrf/VRFConsumerBaseV2.sol";
-import "@chainlink/contracts/src/v0.8/vrf/interfaces/VRFCoordinatorV2Interface.sol";
+import {VRFConsumerBaseV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
+import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 
-
-contract lotteryGame is VRFConsumerBaseV2 {
-
-    address public owner;
-    uint public constant ENTRY_FEE = 2 gwei;
-    uint public rolloverPool;
-    bool public lotteryOpen;
-
+contract lotteryGame is VRFConsumerBaseV2Plus {
+    uint public constant ENTRY_FEE = 0.000000000000000001 ether;
     uint8[7] public winningNumbers;
+    uint public roundStartTime;
+    uint constant ROUND_DURATION = 5 minutes;
+    bool public lotteryOpen;
 
     struct Ticket {
         address player;
         uint8[7] numbers;
     }
-
     Ticket[] public tickets;
+    mapping(address => uint) public pendingRewards;
 
-    
-    uint constant TWO_MATCH = 5;
-    uint constant THREE_MATCH = 10;
-    uint constant FOUR_MATCH = 15;
-    uint constant FIVE_MATCH = 20;
-    uint constant SIX_MATCH = 20;
-    uint constant SEVEN_MATCH = 30;
-
-    uint constant OWNER_FEE_PERCENT = 10;
-
-   
-    VRFCoordinatorV2Interface COORDINATOR;
-    uint64 s_subscriptionId;
-    bytes32 keyHash;
-    uint32 callbackGasLimit = 200000;
-    uint16 requestConfirmations = 3;
-    uint32 numWords = 7;
-    uint256 public s_requestId;
+    // VRF
+    bytes32 public keyHash = 0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae;
+    uint256 public subscriptionId;
+    uint32 public callbackGasLimit = 700_000;
+    uint16 public requestConfirmations = 3;
+    uint32 public numWords = 7;
 
     event TicketPurchased(address indexed player);
-    event WinnerNumbersGenerated(uint8[7] winningNumbers);
-    event RewardsDistributed();
+    event WinningNumbersGenerated(uint8[7] numbers);
+    event RewardClaimed(address indexed player, uint amount);
 
-    constructor(
-        address vrfCoordinator,
-        bytes32 _keyHash,
-        uint64 subscriptionId
-    ) VRFConsumerBaseV2(vrfCoordinator) {
-        owner = msg.sender;
-        lotteryOpen = true;
-
-        COORDINATOR = VRFCoordinatorV2Interface(vrfCoordinator);
-        keyHash = _keyHash;
-        s_subscriptionId = subscriptionId;
+    constructor(uint256 _subId)
+        VRFConsumerBaseV2Plus(0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B)
+    {
+        subscriptionId = _subId;
+        lotteryOpen = false;
     }
 
-    // ========== MODIFIER ==========
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Not owner");
-        _;
-    }
+    function buyTicket(uint8[7] memory numbers) external payable {
+        require(msg.value == ENTRY_FEE, "Wrong fee");
 
-    // buy ticktet
-    function buyTicket(uint8[7] memory _numbers) public payable {
-        require(lotteryOpen, "Lottery closed");
-        require(msg.value == ENTRY_FEE, "Incorrect entry fee");
-
-        for (uint i = 0; i < 7; i++) {
-            require(_numbers[i] >= 1 && _numbers[i] <= 47, "Invalid number");
+        // If first ticket, start the round
+        if (!lotteryOpen) {
+            lotteryOpen = true;
+            roundStartTime = block.timestamp;
         }
 
-        tickets.push(Ticket(msg.sender, _numbers));
+        // If round expired, close it and request VRF
+        if (lotteryOpen && block.timestamp > roundStartTime + ROUND_DURATION) {
+            lotteryOpen = false;
+            requestWinningNumbers(true);
+            return; // this ticket will go to next round
+        }
+
+        // Validate numbers
+        for (uint i=0; i<7; i++) {
+            require(numbers[i] >= 1 && numbers[i] <= 47, "Invalid number");
+        }
+
+        tickets.push(Ticket(msg.sender, numbers));
         emit TicketPurchased(msg.sender);
     }
 
-    // get random words from chainlink vrf
-    function requestWinningNumbers() public onlyOwner {
-        require(lotteryOpen, "Lottery closed");
-        s_requestId = COORDINATOR.requestRandomWords(
-            keyHash,
-            s_subscriptionId,
-            requestConfirmations,
-            callbackGasLimit,
-            numWords
+    function requestWinningNumbers(bool enableNativePayment) internal {
+        s_vrfCoordinator.requestRandomWords(
+            VRFV2PlusClient.RandomWordsRequest({
+                keyHash: keyHash,
+                subId: subscriptionId,
+                requestConfirmations: requestConfirmations,
+                callbackGasLimit: callbackGasLimit,
+                numWords: numWords,
+                extraArgs: VRFV2PlusClient._argsToBytes(
+                    VRFV2PlusClient.ExtraArgsV1({nativePayment: enableNativePayment})
+                )
+            })
         );
     }
 
-    // chainlink vrf callback function to receive random words and generate winning numbers
-    function fulfillRandomWords(
-        uint256, // requestId 
-        uint256[] memory randomWords
-    ) internal override {
-        for (uint i = 0; i < 7; i++) {
+    function fulfillRandomWords(uint256, uint256[] calldata randomWords) internal override {
+        // Generate winning numbers
+        for (uint i=0; i<7; i++) {
             winningNumbers[i] = uint8((randomWords[i] % 47) + 1);
         }
-        emit WinnerNumbersGenerated(winningNumbers);
+        emit WinningNumbersGenerated(winningNumbers);
+
         distributeRewards();
     }
 
-    // distribute rewards to winners based on matching numbers
     function distributeRewards() internal {
         uint totalPool = address(this).balance;
-        uint ownerFee = (totalPool * OWNER_FEE_PERCENT) / 100;
-        payable(owner).transfer(ownerFee);
+        uint ownerFee = (totalPool * 10) / 100;
+        payable(owner()).transfer(ownerFee);
 
         uint prizePool = totalPool - ownerFee;
-
         uint[8] memory matchCount;
 
-        // Count winners per tier
-        for (uint i = 0; i < tickets.length; i++) {
+        for (uint i=0; i<tickets.length; i++) {
             uint matches = countMatches(tickets[i].numbers);
             if (matches >= 2) matchCount[matches]++;
         }
 
-        // Distribute rewards
-        for (uint i = 0; i < tickets.length; i++) {
+        for (uint i=0; i<tickets.length; i++) {
             uint matches = countMatches(tickets[i].numbers);
             if (matches >= 2 && matchCount[matches] > 0) {
-                uint percentage = getPercentage(matches);
-                uint categoryPool = (prizePool * percentage) / 100;
-                uint reward = categoryPool / matchCount[matches];
-
-                payable(tickets[i].player).transfer(reward);
+                uint reward = (prizePool * getPercentage(matches)) / 100 / matchCount[matches];
+                pendingRewards[tickets[i].player] += reward;
             }
         }
 
-        // Remaining balance becomes rollover
-        rolloverPool = address(this).balance;
         delete tickets;
-
-        emit RewardsDistributed();
+        lotteryOpen = false;
     }
 
-    // helper functions
-    function countMatches(uint8[7] memory playerNumbers) internal view returns (uint) {
-        uint matches = 0;
-        for (uint i = 0; i < 7; i++) {
-            if (playerNumbers[i] == winningNumbers[i]) matches++;
+    function claimReward() external {
+        uint reward = pendingRewards[msg.sender];
+        require(reward > 0, "No reward");
+        pendingRewards[msg.sender] = 0;
+        payable(msg.sender).transfer(reward);
+        emit RewardClaimed(msg.sender, reward);
+    }
+
+    function countMatches(uint8[7] memory numbers) internal view returns (uint) {
+        uint matches;
+        for (uint i=0; i<7; i++) {
+            if (numbers[i] == winningNumbers[i]) matches++;
         }
         return matches;
     }
 
     function getPercentage(uint matches) internal pure returns (uint) {
-        if (matches == 2) return TWO_MATCH;
-        if (matches == 3) return THREE_MATCH;
-        if (matches == 4) return FOUR_MATCH;
-        if (matches == 5) return FIVE_MATCH;
-        if (matches == 6) return SIX_MATCH;
-        if (matches == 7) return SEVEN_MATCH;
-        return 0;
-    }
-
-    function reopenLottery() public onlyOwner {
-        require(!lotteryOpen, "Already open");
-        lotteryOpen = true;
+        uint256[8] memory percentages = [uint256(0), 0, 5, 10, 15, 20, 20, 30];
+        return percentages[matches];
     }
 
     receive() external payable {}
