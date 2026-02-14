@@ -1,23 +1,16 @@
-require("dotenv").config();
 const { ethers } = require("hardhat");
 
 async function main() {
-  const lotteryFactory = await ethers.getContractFactory("lotteryGame");
+    const Lottery = await ethers.getContractFactory("lotteryGame");
 
-  const lottery = await lotteryFactory.deploy(
-    process.env.VRF_COORDINATOR,
-    process.env.KEY_HASH,
-    Number(process.env.SUBSCRIPTION_ID)
-  );
+    const lottery = await Lottery.deploy();
 
-  await lottery.deployed();
+    await lottery.waitForDeployment();
 
-  console.log("Lottery deployed to:", lottery.address);
+    console.log("Lottery deployed to:", await lottery.getAddress());
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((error) => {
+main().catch((error) => {
     console.error(error);
-    process.exit(1);
-  });
+    process.exitCode = 1;
+});

@@ -20,7 +20,7 @@ contract lotteryGame is VRFConsumerBaseV2Plus {
 
     // VRF
     bytes32 public keyHash = 0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae;
-    uint256 public subscriptionId;
+    uint256 public subscriptionId = 13168769024327207748906946501962927677918452239861740502138561102184179347810;
     uint32 public callbackGasLimit = 700_000;
     uint16 public requestConfirmations = 3;
     uint32 public numWords = 7;
@@ -29,10 +29,9 @@ contract lotteryGame is VRFConsumerBaseV2Plus {
     event WinningNumbersGenerated(uint8[7] numbers);
     event RewardClaimed(address indexed player, uint amount);
 
-    constructor(uint256 _subId)
+    constructor()
         VRFConsumerBaseV2Plus(0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B)
     {
-        subscriptionId = _subId;
         lotteryOpen = false;
     }
 

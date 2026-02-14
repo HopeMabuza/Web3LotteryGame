@@ -1,4 +1,14 @@
 node_modules
-
+dist
+build
+artifacts
+cache
 .env
-
+.env.local
+.env.*.local
+*.log
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
