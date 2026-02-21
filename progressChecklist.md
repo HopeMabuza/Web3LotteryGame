@@ -21,12 +21,12 @@
   - [x] `WinningNumbersGenerated`
   - [x] `RewardClaimed`
 
-## New features
+## New / Updated Features (Pending Testing)
 - [ ] **Winning numbers are unique** (no duplicates) ✅ pending
 - [ ] **Winning numbers are sorted in ascending order** ✅ pending
-- [ ] if the numbers are not in a same sequence as the one needed we all the numbers from the number we got wrong will not be considered.
-- [ ] it must be automated, restart after every roung from deplyment
-
+- [ ] **Rollover pool**: leftover ETH after rewards stays in contract for the next round ✅ pending
+- [ ] **Only current round tickets cleared**; previous round rewards remain pending ✅ pending
+- [ ] **Lottery automatically ready for next round** without manual reset ✅ pending
 
 ## Deployment & Usage Checklist
 - [x] Deploy contract with **Chainlink VRF subscription ID**
