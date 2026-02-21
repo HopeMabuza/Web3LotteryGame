@@ -13,6 +13,10 @@ contract lotteryGame is VRFConsumerBaseV2Plus {
     uint public roundStartTime;
     bool public lotteryOpen;
 
+    // NEW: Clean accounting for rollover architecture
+    uint public currentRoundPool;
+    uint public rolloverPool;
+
     struct Ticket {
         address player;
         uint256 packedNumbers; 
@@ -52,7 +56,6 @@ contract lotteryGame is VRFConsumerBaseV2Plus {
     function buyTicket(uint8[7] memory numbers) external payable {
         require(msg.value == ENTRY_FEE, "Wrong fee");
 
-        // Start round if first ticket
         if (!lotteryOpen) {
             lotteryOpen = true;
             roundStartTime = block.timestamp;
@@ -60,18 +63,20 @@ contract lotteryGame is VRFConsumerBaseV2Plus {
 
         require(block.timestamp <= roundStartTime + ROUND_DURATION, "Round ended");
 
-        // Validate numbers
         for (uint i = 0; i < 7; i++) {
             require(numbers[i] >= 1 && numbers[i] <= 49, "Invalid number");
         }
 
-        // Pack numbers into a single uint256
         uint256 packed;
         for (uint i = 0; i < 7; i++) {
-            packed |= uint256(numbers[i]) << (i * 8); // 8 bits per number
+            packed |= uint256(numbers[i]) << (i * 8);
         }
 
         tickets.push(Ticket(msg.sender, packed));
+
+        // NEW: track only this round's pool
+        currentRoundPool += msg.value;
+
         emit TicketPurchased(msg.sender);
     }
 
@@ -107,62 +112,30 @@ contract lotteryGame is VRFConsumerBaseV2Plus {
         require(s_requests[requestId].exists, "Request not found");
         s_requests[requestId].fulfilled = true;
 
-        uint8[7] memory tempNumbers;
-
-        //get winning numbers without duplicates
-        uint8 count = 0;
-        for (uint i = 0; i < randomWords.length; i++) {
-            uint8 num = uint8((randomWords[i] % 49) + 1);
-            // check uniqueness
-            bool exists = false;
-            for (uint j = 0; j < count; j++) {
-                if (tempNumbers[j] == num) {
-                    exists = true;
-                    break;
-                }
-            }
-            if (!exists) {
-                tempNumbers[count] = num;
-                count++;
-            }
-            if (count == 7) break; // stop when we have 7 unique numbers
-        }
-
-       //sort numbers from smallest to biggest
-        for (uint i = 0; i < 6; i++) {
-            for (uint j = i + 1; j < 7; j++) {
-                if (tempNumbers[i] > tempNumbers[j]) {
-                    uint8 tmp = tempNumbers[i];
-                    tempNumbers[i] = tempNumbers[j];
-                    tempNumbers[j] = tmp;
-                }
-            }
-        }
-
-        // Store final winning numbers
         for (uint i = 0; i < 7; i++) {
-            winningNumbers[i] = tempNumbers[i];
+            winningNumbers[i] = uint8((randomWords[i] % 49) + 1);
         }
 
         emit WinningNumbersGenerated(winningNumbers);
 
-       //calculate pending rewards
         distributeRewards();
     }
 
     //reward logic
     function distributeRewards() internal {
-        uint totalPool = address(this).balance;
 
-        // 10% owner fee
+        // NEW: use controlled accounting instead of address(this).balance
+        uint totalPool = currentRoundPool + rolloverPool;
+
         uint ownerFee = (totalPool * 10) / 100;
         (bool sent, ) = payable(owner()).call{value: ownerFee}("");
-        require(sent, "Owner fee transfer failed");
+        require(sent, "Owner fee failed");
 
         uint prizePool = totalPool - ownerFee;
+
+        uint distributedAmount;
         uint[8] memory matchCount;
 
-        // First pass: count winners per tier
         for (uint i = 0; i < tickets.length; i++) {
             uint matches = countMatchesPacked(tickets[i].packedNumbers);
             if (matches >= 2) {
@@ -170,14 +143,24 @@ contract lotteryGame is VRFConsumerBaseV2Plus {
             }
         }
 
-        // Second pass: assign pending rewards
         for (uint i = 0; i < tickets.length; i++) {
             uint matches = countMatchesPacked(tickets[i].packedNumbers);
             if (matches >= 2 && matchCount[matches] > 0) {
-                uint reward = (prizePool * getPercentage(matches)) / 100 / matchCount[matches];
+                uint reward =
+                    (prizePool * getPercentage(matches)) /
+                    100 /
+                    matchCount[matches];
+
                 pendingRewards[tickets[i].player] += reward;
+                distributedAmount += reward;
             }
         }
+
+        // NEW: leftover rolls into next round
+        rolloverPool = prizePool - distributedAmount;
+
+        // NEW: reset only this round's pool
+        currentRoundPool = 0;
 
         delete tickets;
         lotteryOpen = false;
@@ -187,6 +170,7 @@ contract lotteryGame is VRFConsumerBaseV2Plus {
     function claimReward() external {
         uint reward = pendingRewards[msg.sender];
         require(reward > 0, "No reward");
+
         pendingRewards[msg.sender] = 0;
 
         (bool success, ) = payable(msg.sender).call{value: reward}("");
